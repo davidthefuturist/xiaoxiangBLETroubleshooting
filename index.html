@@ -144,15 +144,31 @@
         <div id="status" class="status">DISCONNECTED</div>
 
         <div class="box">
-            <button id="connectBtn" class="btn full">SCAN &amp; CONNECT</button>
+            <label>Device Name Filter</label>
+            <div style="display:flex; gap:6px;">
+                <select id="nameMode" style="flex:0 0 120px;">
+                    <option value="all">No filter</option>
+                    <option value="prefix" selected>Starts with</option>
+                    <option value="exact">Exact name</option>
+                </select>
+                <input type="text" id="nameValue" placeholder="e.g. SP15S" value="SP15S">
+            </div>
+            <div style="font-size:10px; color:#666; margin-top:4px;">
+                Web Bluetooth only supports "starts with" and "exact" filters natively.
+                If your device name contains the substring elsewhere (e.g. "BMS-SP15S-001"),
+                use "No filter" and pick it from the chooser list.
+            </div>
+
+            <label style="margin-top:12px;">Optional Service UUIDs (comma-separated, needed for custom services on iOS/Bluefy)</label>
+            <input type="text" id="optServices" placeholder="e.g. 00001234-0000-1000-8000-00805f9b34fb" />
+            <div style="font-size:10px; color:#666; margin-top:4px;">Add custom service UUIDs here before connecting to access them. Required on iOS for non-standard services.</div>
+
+            <button id="connectBtn" class="btn full" style="margin-top:14px;">SCAN &amp; CONNECT</button>
             <button id="disconnectBtn" class="btn full danger" style="display:none; margin-top:8px;">DISCONNECT</button>
             <div id="devInfo" style="display:none; margin-top:10px; font-size:12px; color:#aaa;">
                 <div>Device: <span id="devName" style="color:#fff; font-family:monospace;">—</span></div>
                 <div>ID: <span id="devId" style="color:#fff; font-family:monospace; font-size:10px;">—</span></div>
             </div>
-            <label style="margin-top:12px;">Optional Service UUIDs (comma-separated, needed for custom services on iOS/Bluefy)</label>
-            <input type="text" id="optServices" placeholder="e.g. 00001234-0000-1000-8000-00805f9b34fb" />
-            <div style="font-size:10px; color:#666; margin-top:4px;">Leave blank to only see standard advertised services. Add custom UUIDs here before connecting to access them.</div>
         </div>
 
         <div id="servicesBox" class="box" style="display:none;">
@@ -193,7 +209,8 @@
     // timestamps and viewable in hex / ASCII / decimal simultaneously.
     //
     // Designed for Web Bluetooth / Bluefy on iOS. Notes:
-    //   * Bluefy refuses `filters` arrays sometimes; we use acceptAllDevices.
+    //   * Bluefy refuses some `filters` shapes; if name filtering rejects,
+    //     fall back to "No filter" (acceptAllDevices) and pick from the chooser.
     //   * Custom (non-standard) service UUIDs MUST be declared in
     //     optionalServices before connecting, or getPrimaryServices() won't
     //     see them. The "Optional Service UUIDs" input handles this.
@@ -381,12 +398,26 @@
                 ? optStr.split(/[,\s]+/).filter(Boolean).map(s => s.toLowerCase())
                 : [];
 
-            pushLog({ tag: 'info', text: `Requesting device… optionalServices=[${optServices.join(', ') || 'none'}]` });
+            // Build the requestDevice options. Web Bluetooth requires EITHER
+            // `acceptAllDevices: true` OR a non-empty `filters` array — never
+            // both. Name filtering only supports "name" (exact) and "namePrefix"
+            // (starts-with); there's no native "contains" matcher.
+            const nameMode  = $('nameMode').value;
+            const nameValue = $('nameValue').value.trim();
+            const reqOpts = { optionalServices: optServices };
 
-            device = await navigator.bluetooth.requestDevice({
-                acceptAllDevices: true,
-                optionalServices: optServices
-            });
+            if (nameMode === 'prefix' && nameValue) {
+                reqOpts.filters = [{ namePrefix: nameValue }];
+                pushLog({ tag: 'info', text: `Requesting device with namePrefix="${nameValue}", optionalServices=[${optServices.join(', ') || 'none'}]` });
+            } else if (nameMode === 'exact' && nameValue) {
+                reqOpts.filters = [{ name: nameValue }];
+                pushLog({ tag: 'info', text: `Requesting device with name="${nameValue}", optionalServices=[${optServices.join(', ') || 'none'}]` });
+            } else {
+                reqOpts.acceptAllDevices = true;
+                pushLog({ tag: 'info', text: `Requesting device (no name filter), optionalServices=[${optServices.join(', ') || 'none'}]` });
+            }
+
+            device = await navigator.bluetooth.requestDevice(reqOpts);
 
             $('devName').innerText = device.name || '(unnamed)';
             $('devId').innerText   = device.id || '—';
