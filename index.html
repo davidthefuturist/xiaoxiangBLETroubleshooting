@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+    <title>BLE Inspector</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, sans-serif;
+            background: #121212; color: #fff; padding: 16px;
+            margin: 0;
+        }
+        .container { max-width: 720px; margin: auto; }
+        h1 { font-size: 20px; margin: 0 0 12px 0; }
+        h3 {
+            color: #44ff44; font-size: 12px; text-transform: uppercase;
+            letter-spacing: 1px; margin: 0 0 10px 0;
+        }
+
+        .status {
+            padding: 10px; margin-bottom: 16px; border-radius: 8px;
+            border: 1px solid #ff4444; color: #ff4444;
+            font-size: 12px; font-weight: bold; text-align: center;
+        }
+        .status.connected { border-color: #44ff44; color: #44ff44; }
+
+        .box {
+            background: #1a1a1a; border: 1px solid #333;
+            border-radius: 10px; padding: 14px; margin-bottom: 14px;
+        }
+
+        .btn {
+            padding: 12px 16px; border-radius: 8px; border: none;
+            font-weight: bold; cursor: pointer; font-size: 14px;
+            background: #44ff44; color: #000;
+        }
+        .btn.full { width: 100%; }
+        .btn.small { padding: 6px 10px; font-size: 12px; }
+        .btn.danger { background: #ff4444; color: #fff; }
+        .btn.neutral { background: #333; color: #fff; }
+        .btn.info { background: #44bbff; color: #000; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        input, select, textarea {
+            width: 100%; padding: 10px; border-radius: 6px;
+            border: 1px solid #333; background: #000; color: #fff;
+            font-size: 14px; font-family: monospace;
+            -webkit-appearance: none; appearance: none;
+            outline: none;
+        }
+        input:focus, select:focus, textarea:focus { border-color: #44ff44; }
+        label {
+            font-size: 11px; color: #aaa; font-weight: bold;
+            text-transform: uppercase; display: block; margin: 8px 0 4px 0;
+        }
+
+        /* --- Service / characteristic tree --- */
+        .service {
+            border: 1px solid #2a2a2a; border-radius: 8px;
+            margin-bottom: 8px; overflow: hidden;
+        }
+        .service-header {
+            background: #222; padding: 10px; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px;
+        }
+        .service-header .svc-name { color: #44ff44; font-weight: bold; }
+        .service-header .svc-uuid { color: #888; font-family: monospace; font-size: 10px; }
+        .service-body { display: none; padding: 8px; background: #161616; }
+        .service.expanded .service-body { display: block; }
+        .service.expanded .service-header::after { content: '▼'; color: #666; }
+        .service:not(.expanded) .service-header::after { content: '▶'; color: #666; }
+
+        .characteristic {
+            background: #0a0a0a; border: 1px solid #222;
+            border-radius: 6px; padding: 10px; margin-bottom: 8px;
+        }
+        .char-uuid {
+            color: #ccc; font-family: monospace; font-size: 11px;
+            word-break: break-all; margin-bottom: 4px;
+        }
+        .char-props {
+            display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;
+        }
+        .prop-badge {
+            font-size: 9px; padding: 2px 6px; border-radius: 3px;
+            background: #333; color: #aaa; font-weight: bold;
+            text-transform: uppercase;
+        }
+        .prop-badge.read     { background: #1e3a5f; color: #44bbff; }
+        .prop-badge.write    { background: #5f3a1e; color: #ffaa44; }
+        .prop-badge.writenor { background: #5f3a1e; color: #ffaa44; }
+        .prop-badge.notify   { background: #1e5f2e; color: #44ff44; }
+        .prop-badge.indicate { background: #1e5f5f; color: #44ffff; }
+
+        .char-actions {
+            display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;
+        }
+
+        .write-row { display: flex; gap: 6px; margin-top: 6px; }
+        .write-row select { flex: 0 0 90px; }
+        .write-row input { flex: 1; }
+        .write-row button { flex: 0 0 auto; }
+
+        /* --- Log --- */
+        #logBox { background: #1a1a1a; }
+        #log {
+            background: #000; border: 1px solid #222; border-radius: 6px;
+            padding: 8px; height: 280px; overflow-y: auto;
+            font-family: monospace; font-size: 11px;
+            white-space: pre-wrap; word-break: break-all;
+        }
+        .log-line { margin: 2px 0; }
+        .log-time { color: #666; }
+        .log-tag-rx { color: #44ff44; }
+        .log-tag-tx { color: #ffaa44; }
+        .log-tag-info { color: #44bbff; }
+        .log-tag-err { color: #ff4444; }
+        .log-uuid { color: #888; }
+        .log-bytes { color: #fff; }
+        .log-decoded { color: #aaa; font-style: italic; }
+
+        .log-controls {
+            display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;
+        }
+        .log-controls button { flex: 1; min-width: 100px; }
+
+        .filter-row {
+            display: flex; gap: 6px; align-items: center; margin-bottom: 8px;
+        }
+        .filter-row label { margin: 0; flex: 0 0 auto; }
+        .filter-row input { flex: 1; padding: 6px; }
+
+        .empty-state {
+            color: #666; font-style: italic; text-align: center; padding: 20px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BLE Inspector</h1>
+        <div id="status" class="status">DISCONNECTED</div>
+
+        <div class="box">
+            <button id="connectBtn" class="btn full">SCAN &amp; CONNECT</button>
+            <button id="disconnectBtn" class="btn full danger" style="display:none; margin-top:8px;">DISCONNECT</button>
+            <div id="devInfo" style="display:none; margin-top:10px; font-size:12px; color:#aaa;">
+                <div>Device: <span id="devName" style="color:#fff; font-family:monospace;">—</span></div>
+                <div>ID: <span id="devId" style="color:#fff; font-family:monospace; font-size:10px;">—</span></div>
+            </div>
+            <label style="margin-top:12px;">Optional Service UUIDs (comma-separated, needed for custom services on iOS/Bluefy)</label>
+            <input type="text" id="optServices" placeholder="e.g. 00001234-0000-1000-8000-00805f9b34fb" />
+            <div style="font-size:10px; color:#666; margin-top:4px;">Leave blank to only see standard advertised services. Add custom UUIDs here before connecting to access them.</div>
+        </div>
+
+        <div id="servicesBox" class="box" style="display:none;">
+            <h3>Services &amp; Characteristics</h3>
+            <div id="services"></div>
+        </div>
+
+        <div id="logBox" class="box" style="display:none;">
+            <h3>Live Log</h3>
+            <div class="filter-row">
+                <label>Filter:</label>
+                <input type="text" id="logFilter" placeholder="substring match (UUID, hex, text)…">
+                <select id="logFormat" style="flex:0 0 110px;">
+                    <option value="all">All formats</option>
+                    <option value="hex">Hex only</option>
+                    <option value="ascii">ASCII only</option>
+                    <option value="dec">Decimal only</option>
+                </select>
+            </div>
+            <div id="log"></div>
+            <div class="log-controls">
+                <button class="btn small neutral" id="logClearBtn">CLEAR</button>
+                <button class="btn small info"    id="logCopyBtn">COPY ALL</button>
+                <button class="btn small info"    id="logDownloadBtn">DOWNLOAD .TXT</button>
+                <button class="btn small neutral" id="logPauseBtn">PAUSE</button>
+            </div>
+            <div id="logCopyStatus" style="font-size:11px; color:#44ff44; margin-top:6px; min-height:14px; text-align:center;"></div>
+        </div>
+    </div>
+
+    <script>
+    // ============================================================
+    // BLE INSPECTOR
+    //
+    // Generalized companion to the VESC Fleet Tuner: connects to any BLE
+    // peripheral, walks every service + characteristic, and lets you read /
+    // write / subscribe to each one. All traffic is logged with high-res
+    // timestamps and viewable in hex / ASCII / decimal simultaneously.
+    //
+    // Designed for Web Bluetooth / Bluefy on iOS. Notes:
+    //   * Bluefy refuses `filters` arrays sometimes; we use acceptAllDevices.
+    //   * Custom (non-standard) service UUIDs MUST be declared in
+    //     optionalServices before connecting, or getPrimaryServices() won't
+    //     see them. The "Optional Service UUIDs" input handles this.
+    // ============================================================
+
+    const $ = (id) => document.getElementById(id);
+
+    let device = null;
+    let server = null;
+    // Map of characteristic UUID -> BluetoothRemoteGATTCharacteristic
+    // (Strictly speaking UUIDs can repeat across services, so we key on a
+    // composite "serviceUUID::charUUID" to be safe.)
+    const charRegistry = new Map();
+    // Track which characteristics we've subscribed to so the toggle works.
+    const subscribed = new Set();
+
+    let logPaused = false;
+    const logEntries = [];  // structured log for filtering / export
+
+    // ---------- Logging ----------
+    function nowStamp() {
+        const d = new Date();
+        const pad = (n, w=2) => String(n).padStart(w, '0');
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(),3)}`;
+    }
+
+    function pushLog(entry) {
+        // entry: { tag: 'rx'|'tx'|'info'|'err', uuid?, bytes?: Uint8Array, text?: string }
+        entry.ts = nowStamp();
+        entry.tsIso = new Date().toISOString();
+        logEntries.push(entry);
+        if (!logPaused) renderLogIncremental(entry);
+    }
+
+    function bytesToHex(bytes) {
+        return Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+    }
+    function bytesToDec(bytes) {
+        return Array.from(bytes).join(' ');
+    }
+    function bytesToAscii(bytes) {
+        return Array.from(bytes).map(b => (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : '.').join('');
+    }
+
+    function formatLogLine(entry) {
+        const fmt = $('logFormat').value;
+        const tagClass = `log-tag-${entry.tag}`;
+        const tagText  = entry.tag.toUpperCase().padEnd(4, ' ');
+        let body = '';
+
+        if (entry.bytes) {
+            const parts = [];
+            if (fmt === 'all' || fmt === 'hex')   parts.push(`hex[${bytesToHex(entry.bytes)}]`);
+            if (fmt === 'all' || fmt === 'ascii') parts.push(`ascii["${bytesToAscii(entry.bytes)}"]`);
+            if (fmt === 'all' || fmt === 'dec')   parts.push(`dec[${bytesToDec(entry.bytes)}]`);
+            parts.push(`len=${entry.bytes.length}`);
+            body = parts.join('  ');
+        } else if (entry.text) {
+            body = entry.text;
+        }
+
+        const uuidStr = entry.uuid ? ` <span class="log-uuid">${shortUuid(entry.uuid)}</span>` : '';
+        return `<div class="log-line"><span class="log-time">${entry.ts}</span> <span class="${tagClass}">${tagText}</span>${uuidStr} <span class="log-bytes">${escapeHtml(body)}</span></div>`;
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    }
+
+    function shortUuid(uuid) {
+        // Shorten the 16-bit form for readability: 00001234-0000-1000-8000-00805f9b34fb -> 0x1234
+        if (typeof uuid !== 'string') return String(uuid);
+        const m = uuid.match(/^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/i);
+        if (m) return `0x${m[1].toUpperCase()}`;
+        return uuid;
+    }
+
+    function renderLogIncremental(entry) {
+        const filter = $('logFilter').value.trim().toLowerCase();
+        if (filter && !logLineMatches(entry, filter)) return;
+        const logEl = $('log');
+        const wasNearBottom = (logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight) < 40;
+        logEl.insertAdjacentHTML('beforeend', formatLogLine(entry));
+        if (wasNearBottom) logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function logLineMatches(entry, needle) {
+        if (entry.uuid && entry.uuid.toLowerCase().includes(needle)) return true;
+        if (entry.text && entry.text.toLowerCase().includes(needle)) return true;
+        if (entry.bytes) {
+            if (bytesToHex(entry.bytes).toLowerCase().includes(needle)) return true;
+            if (bytesToAscii(entry.bytes).toLowerCase().includes(needle)) return true;
+            if (bytesToDec(entry.bytes).includes(needle)) return true;
+        }
+        return false;
+    }
+
+    function rerenderLogFull() {
+        const logEl = $('log');
+        const filter = $('logFilter').value.trim().toLowerCase();
+        logEl.innerHTML = logEntries
+            .filter(e => !filter || logLineMatches(e, filter))
+            .map(formatLogLine).join('');
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    $('logFilter').addEventListener('input', rerenderLogFull);
+    $('logFormat').addEventListener('change', rerenderLogFull);
+
+    $('logClearBtn').addEventListener('click', () => {
+        logEntries.length = 0;
+        $('log').innerHTML = '';
+    });
+
+    $('logPauseBtn').addEventListener('click', () => {
+        logPaused = !logPaused;
+        $('logPauseBtn').innerText = logPaused ? 'RESUME' : 'PAUSE';
+        if (!logPaused) rerenderLogFull();
+    });
+
+    function flashCopyStatus(msg, color) {
+        const el = $('logCopyStatus');
+        el.style.color = color || '#44ff44';
+        el.innerText = msg;
+        setTimeout(() => { el.innerText = ''; }, 2500);
+    }
+
+    function logAsText() {
+        return logEntries.map(e => {
+            let line = `${e.tsIso}  ${e.tag.toUpperCase().padEnd(4)}`;
+            if (e.uuid)  line += `  ${e.uuid}`;
+            if (e.bytes) line += `  hex[${bytesToHex(e.bytes)}]  ascii["${bytesToAscii(e.bytes)}"]  dec[${bytesToDec(e.bytes)}]  len=${e.bytes.length}`;
+            if (e.text)  line += `  ${e.text}`;
+            return line;
+        }).join('\n');
+    }
+
+    function fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        return ok;
+    }
+
+    $('logCopyBtn').addEventListener('click', async () => {
+        const text = logAsText();
+        if (!text) { flashCopyStatus('Log is empty', '#ff8844'); return; }
+        let ok = false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                ok = true;
+            } else {
+                ok = fallbackCopy(text);
+            }
+        } catch (e) { ok = fallbackCopy(text); }
+        flashCopyStatus(ok ? `Copied ${logEntries.length} lines` : 'Copy failed', ok ? '#44ff44' : '#ff4444');
+    });
+
+    $('logDownloadBtn').addEventListener('click', () => {
+        const text = logAsText();
+        if (!text) { flashCopyStatus('Log is empty', '#ff8844'); return; }
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ble-log-${new Date().toISOString().replace(/[:.]/g,'-')}.txt`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    // ---------- Connection ----------
+    $('connectBtn').addEventListener('click', async () => {
+        try {
+            // Parse the optional services field. We accept comma / whitespace
+            // separated UUIDs. iOS/Bluefy requires the full 128-bit string form,
+            // so we do NOT attempt to parse short hex like "0x1234".
+            const optStr = $('optServices').value.trim();
+            const optServices = optStr
+                ? optStr.split(/[,\s]+/).filter(Boolean).map(s => s.toLowerCase())
+                : [];
+
+            pushLog({ tag: 'info', text: `Requesting device… optionalServices=[${optServices.join(', ') || 'none'}]` });
+
+            device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: optServices
+            });
+
+            $('devName').innerText = device.name || '(unnamed)';
+            $('devId').innerText   = device.id || '—';
+            $('devInfo').style.display = 'block';
+
+            device.addEventListener('gattserverdisconnected', onDisconnected);
+
+            pushLog({ tag: 'info', text: `Selected device "${device.name || '(unnamed)'}" id=${device.id}. Connecting GATT…` });
+
+            server = await device.gatt.connect();
+
+            pushLog({ tag: 'info', text: 'GATT connected. Discovering services…' });
+
+            $('status').innerText = 'CONNECTED';
+            $('status').className = 'status connected';
+            $('connectBtn').style.display = 'none';
+            $('disconnectBtn').style.display = 'block';
+            $('logBox').style.display = 'block';
+            $('servicesBox').style.display = 'block';
+
+            await discoverAll();
+        } catch (e) {
+            console.error(e);
+            const msg = e.message ? e.message : String(e);
+            pushLog({ tag: 'err', text: `Connection failed: ${msg}` });
+            alert(`Connection failed: ${msg}`);
+        }
+    });
+
+    $('disconnectBtn').addEventListener('click', () => {
+        if (device && device.gatt && device.gatt.connected) {
+            device.gatt.disconnect();
+        } else {
+            onDisconnected();
+        }
+    });
+
+    function onDisconnected() {
+        pushLog({ tag: 'info', text: 'GATT disconnected.' });
+        $('status').innerText = 'DISCONNECTED';
+        $('status').className = 'status';
+        $('connectBtn').style.display = 'block';
+        $('disconnectBtn').style.display = 'none';
+        $('services').innerHTML = '';
+        charRegistry.clear();
+        subscribed.clear();
+    }
+
+    async function discoverAll() {
+        const services = await server.getPrimaryServices();
+        pushLog({ tag: 'info', text: `Found ${services.length} primary service(s).` });
+
+        const container = $('services');
+        container.innerHTML = '';
+
+        if (services.length === 0) {
+            container.innerHTML = '<div class="empty-state">No services found. If the device advertises a custom service, add its UUID to the "Optional Service UUIDs" field and reconnect.</div>';
+            return;
+        }
+
+        for (const svc of services) {
+            const chars = await svc.getCharacteristics().catch(err => {
+                pushLog({ tag: 'err', text: `getCharacteristics failed for ${svc.uuid}: ${err.message || err}` });
+                return [];
+            });
+            renderService(svc, chars, container);
+        }
+    }
+
+    function renderService(svc, chars, container) {
+        const svcEl = document.createElement('div');
+        svcEl.className = 'service expanded';
+
+        const header = document.createElement('div');
+        header.className = 'service-header';
+        header.innerHTML = `
+            <div>
+                <div class="svc-name">${shortUuid(svc.uuid)}</div>
+                <div class="svc-uuid">${svc.uuid}</div>
+            </div>
+        `;
+        header.addEventListener('click', () => svcEl.classList.toggle('expanded'));
+        svcEl.appendChild(header);
+
+        const body = document.createElement('div');
+        body.className = 'service-body';
+
+        if (chars.length === 0) {
+            body.innerHTML = '<div class="empty-state">No characteristics.</div>';
+        } else {
+            chars.forEach(ch => body.appendChild(renderCharacteristic(svc, ch)));
+        }
+
+        svcEl.appendChild(body);
+        container.appendChild(svcEl);
+    }
+
+    function renderCharacteristic(svc, ch) {
+        const key = `${svc.uuid}::${ch.uuid}`;
+        charRegistry.set(key, ch);
+
+        const props = ch.properties;
+        const propList = [];
+        if (props.read)              propList.push(['read',     'Read']);
+        if (props.write)             propList.push(['write',    'Write']);
+        if (props.writeWithoutResponse) propList.push(['writenor', 'Write-NR']);
+        if (props.notify)            propList.push(['notify',   'Notify']);
+        if (props.indicate)          propList.push(['indicate', 'Indicate']);
+
+        const el = document.createElement('div');
+        el.className = 'characteristic';
+        el.innerHTML = `
+            <div class="char-uuid">${shortUuid(ch.uuid)} <span style="color:#555;">— ${ch.uuid}</span></div>
+            <div class="char-props">
+                ${propList.map(([cls, label]) => `<span class="prop-badge ${cls}">${label}</span>`).join('')}
+            </div>
+            <div class="char-actions"></div>
+        `;
+
+        const actions = el.querySelector('.char-actions');
+
+        if (props.read) {
+            const btn = document.createElement('button');
+            btn.className = 'btn small info';
+            btn.innerText = 'READ';
+            btn.addEventListener('click', () => doRead(ch));
+            actions.appendChild(btn);
+        }
+
+        if (props.notify || props.indicate) {
+            const btn = document.createElement('button');
+            btn.className = 'btn small';
+            btn.innerText = 'SUBSCRIBE';
+            btn.addEventListener('click', () => toggleSubscribe(ch, btn));
+            actions.appendChild(btn);
+        }
+
+        if (props.write || props.writeWithoutResponse) {
+            const writeRow = document.createElement('div');
+            writeRow.className = 'write-row';
+            writeRow.innerHTML = `
+                <select>
+                    <option value="hex">Hex</option>
+                    <option value="text">UTF-8</option>
+                    <option value="dec">Decimal</option>
+                </select>
+                <input type="text" placeholder="e.g. 01 ff a0  or  TIME:123  or  1,255,160">
+                <button class="btn small">WRITE</button>
+            `;
+            const fmtSel = writeRow.querySelector('select');
+            const valIn  = writeRow.querySelector('input');
+            const btn    = writeRow.querySelector('button');
+            btn.addEventListener('click', () => doWrite(ch, fmtSel.value, valIn.value));
+            valIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') doWrite(ch, fmtSel.value, valIn.value); });
+            el.appendChild(writeRow);
+        }
+
+        return el;
+    }
+
+    // ---------- Characteristic ops ----------
+    async function doRead(ch) {
+        try {
+            const dv = await ch.readValue();
+            const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+            pushLog({ tag: 'rx', uuid: ch.uuid, bytes, });
+        } catch (e) {
+            pushLog({ tag: 'err', uuid: ch.uuid, text: `Read failed: ${e.message || e}` });
+        }
+    }
+
+    async function toggleSubscribe(ch, btn) {
+        const key = `${ch.service.uuid}::${ch.uuid}`;
+        if (subscribed.has(key)) {
+            try {
+                await ch.stopNotifications();
+                subscribed.delete(key);
+                btn.innerText = 'SUBSCRIBE';
+                btn.classList.remove('danger');
+                pushLog({ tag: 'info', uuid: ch.uuid, text: 'Unsubscribed.' });
+            } catch (e) {
+                pushLog({ tag: 'err', uuid: ch.uuid, text: `Unsubscribe failed: ${e.message || e}` });
+            }
+        } else {
+            try {
+                ch.addEventListener('characteristicvaluechanged', onNotify);
+                await ch.startNotifications();
+                subscribed.add(key);
+                btn.innerText = 'UNSUBSCRIBE';
+                btn.classList.add('danger');
+                pushLog({ tag: 'info', uuid: ch.uuid, text: 'Subscribed.' });
+            } catch (e) {
+                pushLog({ tag: 'err', uuid: ch.uuid, text: `Subscribe failed: ${e.message || e}` });
+            }
+        }
+    }
+
+    function onNotify(e) {
+        const dv = e.target.value;
+        const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+        pushLog({ tag: 'rx', uuid: e.target.uuid, bytes });
+    }
+
+    // Parse user-entered payload into a Uint8Array.
+    function parsePayload(fmt, str) {
+        if (fmt === 'text') {
+            return new TextEncoder().encode(str);
+        }
+        if (fmt === 'hex') {
+            // Accept "01 ff a0", "01ffa0", "0x01,0xff", "01-ff-a0"
+            const cleaned = str.replace(/0x/gi, '').replace(/[^0-9a-fA-F]/g, '');
+            if (cleaned.length % 2 !== 0) throw new Error('Hex must have even number of digits');
+            const out = new Uint8Array(cleaned.length / 2);
+            for (let i = 0; i < out.length; i++) out[i] = parseInt(cleaned.substr(i*2, 2), 16);
+            return out;
+        }
+        if (fmt === 'dec') {
+            const nums = str.split(/[,\s]+/).filter(Boolean).map(s => {
+                const n = parseInt(s, 10);
+                if (!Number.isFinite(n) || n < 0 || n > 255) throw new Error(`Invalid byte: ${s}`);
+                return n;
+            });
+            return new Uint8Array(nums);
+        }
+        throw new Error(`Unknown format ${fmt}`);
+    }
+
+    async function doWrite(ch, fmt, value) {
+        let bytes;
+        try {
+            bytes = parsePayload(fmt, value);
+        } catch (e) {
+            pushLog({ tag: 'err', uuid: ch.uuid, text: `Parse failed: ${e.message}` });
+            alert(`Parse failed: ${e.message}`);
+            return;
+        }
+
+        try {
+            // Prefer write-without-response when available — it's lower latency
+            // and matches what most peripheral firmware expects for command channels.
+            if (ch.properties.writeWithoutResponse && ch.writeValueWithoutResponse) {
+                await ch.writeValueWithoutResponse(bytes);
+            } else if (ch.properties.write && ch.writeValueWithResponse) {
+                await ch.writeValueWithResponse(bytes);
+            } else {
+                // Older Web Bluetooth: writeValue picks whichever the char supports.
+                await ch.writeValue(bytes);
+            }
+            pushLog({ tag: 'tx', uuid: ch.uuid, bytes });
+        } catch (e) {
+            pushLog({ tag: 'err', uuid: ch.uuid, text: `Write failed: ${e.message || e}` });
+        }
+    }
+    </script>
+</body>
+</html>
